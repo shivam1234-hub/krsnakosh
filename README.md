@@ -1,8 +1,13 @@
 # KrsnaKosh
 
-A personal expense ledger for Android. It picks up UPI payments by itself, lets you tag and organise them, and keeps a live copy in your own Google Sheet. (In the code the app is still called Tag Ledger, its first name.)
+<p><a href="https://github.com/shivam1234-hub/krsnakosh/releases/latest/download/KrsnaKosh.apk"><b>⬇️ Download APK</b></a> · <a href="https://github.com/shivam1234-hub/krsnakosh/releases/latest">all versions</a><br><sub>Android: open the downloaded file and tap Install. You may need to allow installs from your browser first.</sub></p>
 
-**Download:** the latest APK is on the [Releases page](../../releases/latest). Setup steps are in [SETUP.md](SETUP.md).
+## Screenshots
+
+<table><tr><td align="center"><img src="docs/screenshots/kk-home.jpg" width="200"><br><sub>Home</sub></td><td align="center"><img src="docs/screenshots/kk-overview.jpg" width="200"><br><sub>Overview</sub></td><td align="center"><img src="docs/screenshots/kk-export.jpg" width="200"><br><sub>Export</sub></td></tr></table>
+
+
+A personal expense ledger for Android. It picks up UPI payments by itself, lets you tag and organise them, and keeps a live copy in your own Google Sheet. (In the code the app is still called Tag Ledger, its first name.)
 
 ## Features
 
