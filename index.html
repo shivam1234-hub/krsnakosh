@@ -1,0 +1,1107 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<title>Tag Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: one-line quick-add bar on top, ledger list on the left, totals + tag breakdown + export rail on the right; stacks on phones. */
+:root {
+  --bg: #EDF0EC; --surface: #FFFFFF; --surface-2: #E3E8E3; --line: #D2D9D3;
+  --fg: #17211C; --muted: #5C6A62; --accent: #2B44C9; --accent-ink: #FFFFFF; --accent-soft: #E1E6FA;
+  --spend: #B03A2B; --earn: #1C774A; --tag-l: 91%; --tag-fg-l: 27%; --shadow: 0 1px 2px rgba(23,33,28,.06), 0 8px 24px rgba(23,33,28,.08);
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0F1412; --surface: #171F1B; --surface-2: #212B26; --line: #2D3933;
+  --fg: #E6EDE8; --muted: #95A49C; --accent: #93A5FF; --accent-ink: #0C1230; --accent-soft: #222B52;
+  --spend: #F2897A; --earn: #6CD29A; --tag-l: 22%; --tag-fg-l: 82%; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0F1412; --surface: #171F1B; --surface-2: #212B26; --line: #2D3933;
+  --fg: #E6EDE8; --muted: #95A49C; --accent: #93A5FF; --accent-ink: #0C1230; --accent-soft: #222B52;
+  --spend: #F2897A; --earn: #6CD29A; --tag-l: 22%; --tag-fg-l: 82%; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.45 var(--f-body); padding: 20px 16px 96px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+/* header */
+.top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.brand { font-family: var(--f-display); font-weight: 700; font-size: 26px; letter-spacing: -.02em; margin: 0; display: flex; align-items: baseline; gap: 8px; }
+.brand span { font-family: var(--f-mono); font-weight: 400; font-size: 13px; color: var(--accent); }
+.top .spacer { flex: 1; }
+.pill { font-size: 12px; padding: 4px 10px; border-radius: 99px; background: var(--surface-2); color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.pill.ok::before { background: var(--earn); }
+.pill.warn::before { background: var(--spend); }
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 7px 12px; border-radius: 8px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.danger { color: var(--spend); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+select.btn { padding-right: 8px; }
+
+/* quick add */
+.quick { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; box-shadow: var(--shadow); position: relative; }
+.quick-row { display: flex; gap: 8px; }
+.quick-row input { flex: 1; min-width: 0; border: 0; background: var(--surface-2); border-radius: 9px; padding: 12px 14px; font-size: 17px; font-family: var(--f-mono); }
+.quick-row input::placeholder { color: var(--muted); font-family: var(--f-body); font-size: 15px; }
+.quick-preview { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 9px; min-height: 24px; font-size: 13px; color: var(--muted); }
+.quick-preview b { color: var(--fg); font-weight: 600; }
+.hint kbd { font-family: var(--f-mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--surface); }
+.suggest { position: absolute; left: 12px; right: 12px; top: calc(100% - 4px); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 20; }
+
+/* tags */
+.tag { --h: 200; font-family: var(--f-mono); font-size: 12px; line-height: 1; padding: 4px 7px; border-radius: 5px; border: 0; background: hsl(var(--h) 55% var(--tag-l)); color: hsl(var(--h) 45% var(--tag-fg-l)); white-space: nowrap; }
+button.tag:hover { filter: brightness(.96); }
+.tag.on { outline: 2px solid hsl(var(--h) 45% var(--tag-fg-l)); outline-offset: 1px; }
+.tag .ct { opacity: .65; margin-left: 4px; }
+
+/* main grid */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } .side { order: -1; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.toolbar { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-bottom: 1px solid var(--line); }
+.toolbar-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.search { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px 12px; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: 2px; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: 6px; font-size: 13px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.range { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+.range input { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 4px 6px; }
+.cloud { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cloud .lbl { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.linkish { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 2px 4px; }
+
+.banner { margin: 12px 12px 0; padding: 10px 12px; border-radius: 9px; background: var(--accent-soft); font-size: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.banner .spacer { flex: 1; }
+.bulk { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; margin: 12px 12px 0; padding: 8px 10px; border-radius: 10px; background: var(--fg); color: var(--bg); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.bulk input { border: 0; border-radius: 6px; padding: 5px 8px; width: 120px; background: var(--bg); color: var(--fg); font-family: var(--f-mono); font-size: 13px; }
+.bulk .btn { background: transparent; color: var(--bg); border-color: color-mix(in srgb, var(--bg) 35%, transparent); }
+.bulk .btn.danger { color: var(--bg); background: var(--spend); border-color: var(--spend); }
+
+/* ledger list */
+.day { padding: 4px 0; }
+.day-head { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 16px 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.day-head .num { letter-spacing: 0; text-transform: none; }
+.row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 9px 12px 9px 14px; margin: 0 4px; border-radius: 9px; cursor: pointer; }
+.row:hover { background: var(--surface-2); }
+.row.sel { background: var(--accent-soft); }
+.row input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
+.row-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-note { color: var(--muted); font-weight: 400; font-size: 13px; }
+.row-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.amt { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-weight: 500; text-align: right; white-space: nowrap; }
+.amt.expense { color: var(--fg); }
+.amt.income { color: var(--earn); }
+.icon { border: 0; background: transparent; color: var(--muted); width: 30px; height: 30px; border-radius: 7px; font-size: 15px; display: grid; place-items: center; }
+.icon:hover { background: var(--surface); color: var(--fg); }
+.empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+.empty h3 { font-family: var(--f-display); color: var(--fg); font-size: 20px; margin: 0 0 6px; }
+.empty code { font-family: var(--f-mono); background: var(--surface-2); padding: 2px 6px; border-radius: 5px; color: var(--fg); }
+.more { padding: 14px; text-align: center; }
+
+/* side */
+.side { display: flex; flex-direction: column; gap: 14px; }
+.side .panel { padding: 16px; }
+.h { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+.period-name { font-family: var(--f-display); font-size: 15px; font-weight: 500; margin: -4px 0 12px; }
+.big { font-family: var(--f-display); font-weight: 700; font-size: 34px; letter-spacing: -.02em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.kv { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.kv div { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+.kv .num { font-size: 15px; color: var(--fg); }
+.kv .num.earn { color: var(--earn); }
+.kv .num.neg { color: var(--spend); }
+.bars { display: flex; flex-direction: column; gap: 9px; }
+.bar { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 10px; align-items: center; border: 0; background: none; padding: 0; text-align: left; }
+.bar .track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.bar .fill { height: 100%; border-radius: 3px; background: hsl(var(--h) 50% 50%); }
+.bar .num { font-size: 13px; }
+.small-note { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+.export { display: flex; flex-direction: column; gap: 8px; }
+.export .btn { justify-content: space-between; }
+.export .btn small { color: var(--muted); font-family: var(--f-mono); font-size: 11px; }
+.copybox { width: 100%; height: 90px; font-family: var(--f-mono); font-size: 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 8px; }
+
+/* editor sheet */
+.overlay { position: fixed; inset: 0; background: rgba(10,15,12,.45); z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 700px) { .overlay { align-items: center; } }
+.sheet { background: var(--surface); border-radius: 16px; width: 100%; max-width: 480px; max-height: 100%; overflow: auto; padding: 18px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; }
+.sheet h2 { font-family: var(--f-display); font-size: 20px; margin: 0; display: flex; justify-content: space-between; align-items: center; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 12px; color: var(--muted); font-weight: 500; }
+.field input, .field textarea { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 9px 11px; width: 100%; }
+.amount-in { font-family: var(--f-mono); font-size: 24px !important; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tagbox { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 8px; }
+.tagbox input { border: 0 !important; background: transparent !important; padding: 4px 2px !important; flex: 1; min-width: 90px; width: auto !important; font-family: var(--f-mono); font-size: 13px; }
+.tagbox .tag button { border: 0; background: none; color: inherit; padding: 0 0 0 4px; font-size: 12px; }
+.sugg { display: flex; flex-wrap: wrap; gap: 5px; }
+.sheet-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding-top: 4px; }
+.sheet-actions .spacer { flex: 1; }
+.err { color: var(--spend); font-size: 13px; }
+
+.inbox { margin: 12px 12px 0; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); padding: 4px 0 6px; }
+.inbox-head { display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; }
+.inbox-head .spacer { flex: 1; }
+.pend { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; padding: 8px 12px; border-top: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+.pend-amt { min-width: 80px; }
+.pend-fields { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.pend-fields input { flex: 1 1 140px; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 6px 9px; font-size: 14px; }
+.pend-tags { font-family: var(--f-mono); font-size: 13px !important; }
+.pend-actions { display: flex; gap: 4px; }
+.pend-raw { grid-column: 1 / -1; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 520px) { .pend { grid-template-columns: minmax(0, 1fr) auto; } .pend-fields { grid-column: 1 / -1; grid-row: 2; } .pend-actions { grid-column: 2; grid-row: 1; } }
+.inbox-form { display: flex; flex-direction: column; gap: 8px; }
+.paste { margin-top: 12px; font-size: 14px; }
+.paste summary { cursor: pointer; color: var(--accent); }
+.paste textarea { width: 100%; margin: 8px 0; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px; font-size: 13px; }
+.fab { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 30; border: 0; border-radius: 99px; padding: 14px 20px; background: var(--accent); color: var(--accent-ink); font-weight: 600; box-shadow: var(--shadow); }
+.toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(80px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; width: min(92vw, 420px); }
+.toast { background: var(--fg); color: var(--bg); padding: 10px 14px; border-radius: 10px; font-size: 14px; display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); width: 100%; }
+.toast span { flex: 1; }
+.toast button { border: 0; background: none; color: var(--bg); font-weight: 600; text-decoration: underline; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+@media (prefers-reduced-motion: no-preference) { .row, .btn, .tag { transition: background-color .12s, border-color .12s, filter .12s; } }
+@media (max-width: 520px) {
+  .brand { font-size: 22px; }
+  .big { font-size: 28px; }
+  .row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .row .icon { display: none; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1 class="brand">Tag Ledger <span>#expenses</span></h1>
+    <div class="spacer"></div>
+    <span id="sync" class="pill">Connecting…</span>
+    <label class="visually-hidden" for="currency">Currency</label>
+    <select id="currency" class="btn small" title="Currency">
+      <option value="INR">₹ INR</option><option value="USD">$ USD</option><option value="EUR">€ EUR</option><option value="GBP">£ GBP</option><option value="AED">AED</option><option value="SGD">SGD</option>
+    </select>
+    <button id="importBtn" class="btn small" type="button">Import</button>
+    <input id="importFile" type="file" accept=".csv,.xlsx,.xls" hidden>
+  </header>
+
+  <section class="quick" aria-label="Quick add">
+    <form id="quickForm" class="quick-row" autocomplete="off">
+      <label class="visually-hidden" for="quick">Quick add an expense</label>
+      <input id="quick" placeholder="250 lunch #food #office   ·   +50000 salary #income   ·   @yesterday" enterkeyhint="done">
+      <button class="btn primary" type="submit">Add</button>
+    </form>
+    <div id="quickPreview" class="quick-preview">
+      <span class="hint">Type an amount, a title and <b>#tags</b>. Start with <b>+</b> for income, add <b>@yesterday</b> or <b>@12/10</b> for another date. <kbd>/</kbd> to focus, <kbd>Enter</kbd> to save.</span>
+    </div>
+    <div id="quickSuggest" class="suggest" hidden></div>
+  </section>
+
+  <div class="grid">
+    <main class="panel" aria-label="Transactions">
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <label class="visually-hidden" for="search">Search</label>
+          <input id="search" class="search" type="search" placeholder="Search title, note or #tag">
+          <div class="seg" id="typeSeg" role="group" aria-label="Type">
+            <button type="button" data-v="all">All</button><button type="button" data-v="expense">Spent</button><button type="button" data-v="income">Income</button>
+          </div>
+        </div>
+        <div class="toolbar-row">
+          <div class="seg" id="periodSeg" role="group" aria-label="Period">
+            <button type="button" data-v="month">This month</button><button type="button" data-v="last">Last month</button><button type="button" data-v="year">This year</button><button type="button" data-v="all">All time</button><button type="button" data-v="custom">Range</button>
+          </div>
+          <div class="range" id="rangeBox" hidden>
+            <label for="from">From</label><input id="from" type="date"><label for="to">to</label><input id="to" type="date">
+          </div>
+        </div>
+        <div class="cloud" id="cloud"></div>
+      </div>
+      <div id="sampleBanner" class="banner" hidden>
+        <span id="sampleText">These are example entries.</span><span class="spacer"></span>
+        <button id="clearSamples" class="btn small" type="button">Remove examples</button>
+      </div>
+      <div id="bulk" class="bulk" hidden>
+        <b id="bulkCount">0 selected</b>
+        <label class="visually-hidden" for="bulkTag">Tag</label>
+        <input id="bulkTag" placeholder="tag">
+        <button class="btn small" type="button" id="bulkAdd">Add tag</button>
+        <button class="btn small" type="button" id="bulkRemove">Remove tag</button>
+        <button class="btn small danger" type="button" id="bulkDelete">Delete</button>
+        <button class="btn small" type="button" id="bulkClear">Clear</button>
+      </div>
+      <section id="inbox" class="inbox" aria-label="Payments to review" hidden></section>
+      <div id="list"></div>
+      <div id="more" class="more" hidden><button id="loadOlder" class="btn" type="button">Load older entries</button></div>
+    </main>
+
+    <aside class="side">
+      <section class="panel" aria-label="Summary">
+        <p class="h">Spent</p>
+        <p id="periodName" class="period-name">This month</p>
+        <div id="spent" class="big">—</div>
+        <div class="kv">
+          <div>Income<span id="income" class="num earn">—</span></div>
+          <div>Net<span id="net" class="num">—</span></div>
+          <div>Entries<span id="count" class="num">0</span></div>
+          <div>Avg / day<span id="avg" class="num">—</span></div>
+        </div>
+      </section>
+      <section class="panel" aria-label="Spending by tag">
+        <p class="h">Spent by tag</p>
+        <div id="bars" class="bars"></div>
+        <p class="small-note">An entry with two tags counts toward both. Tap a tag to filter.</p>
+      </section>
+      <section class="panel" aria-label="Phone inbox">
+        <p class="h">Phone inbox</p>
+        <p id="inboxStatus" class="small-note" style="margin:0 0 10px">Not connected.</p>
+        <div class="inbox-form">
+          <div class="field"><label for="inboxUrl">Apps Script web app URL</label><input id="inboxUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label for="inboxToken">Secret</label><input id="inboxToken" type="password" autocomplete="off"></div>
+          <div class="toolbar-row"><button id="inboxSave" class="btn small primary" type="button">Save and connect</button><button id="inboxCheck" class="btn small" type="button">Check now</button></div>
+        </div>
+        <details class="paste">
+          <summary>Paste bank SMS instead</summary>
+          <label class="visually-hidden" for="pasteSms">Bank SMS text</label>
+          <textarea id="pasteSms" rows="4" placeholder="Paste one or more bank SMS. Leave a blank line between messages."></textarea>
+          <button id="pasteRead" class="btn small" type="button">Read payments</button>
+        </details>
+      </section>
+      <section class="panel" aria-label="Export">
+        <p class="h">Export to sheet</p>
+        <div class="export">
+          <button id="expXlsx" class="btn" type="button">Excel workbook <small>.xlsx</small></button>
+          <button id="expCsv" class="btn" type="button">CSV file <small>.csv</small></button>
+          <button id="expCopy" class="btn" type="button">Copy for Google Sheets <small>paste</small></button>
+          <textarea id="copyBox" class="copybox" readonly hidden aria-label="Rows to copy"></textarea>
+        </div>
+        <p class="small-note" id="expNote">Exports the entries currently shown, with your filters applied.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<button id="fab" class="fab" type="button">+ New entry</button>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<div id="overlay" class="overlay" hidden>
+  <form id="editor" class="sheet" autocomplete="off" aria-labelledby="edTitle">
+    <h2><span id="edTitle">New entry</span><button type="button" class="icon" id="edClose" aria-label="Close">✕</button></h2>
+    <div class="seg" id="edType" role="group" aria-label="Type">
+      <button type="button" data-v="expense">Expense</button><button type="button" data-v="income">Income</button>
+    </div>
+    <div class="field"><label for="edAmount">Amount</label><input id="edAmount" class="amount-in" inputmode="decimal" placeholder="0"></div>
+    <div class="field"><label for="edName">Title</label><input id="edName" placeholder="What was it for?"></div>
+    <div class="two">
+      <div class="field"><label for="edDate">Date</label><input id="edDate" type="date"></div>
+      <div class="field"><label>&nbsp;</label>
+        <div class="seg" id="edDateQuick"><button type="button" data-d="0">Today</button><button type="button" data-d="-1">Yesterday</button></div>
+      </div>
+    </div>
+    <div class="field"><label for="edTagInput">Tags</label>
+      <div class="tagbox" id="edTags"><input id="edTagInput" placeholder="type and press space"></div>
+      <div class="sugg" id="edSugg"></div>
+    </div>
+    <div class="field"><label for="edNote">Note</label><textarea id="edNote" rows="2" placeholder="Optional"></textarea></div>
+    <div id="edErr" class="err" hidden></div>
+    <div class="sheet-actions">
+      <button type="button" class="btn danger" id="edDelete">Delete</button>
+      <button type="button" class="btn" id="edDup">Duplicate</button>
+      <span class="spacer"></span>
+      <button type="submit" class="btn primary" id="edSave">Save</button>
+    </div>
+  </form>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayISO = (offset = 0) => { const d = new Date(); d.setDate(d.getDate() + offset); return iso(d); };
+const parseISO = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const lsGet = (k, f) => { try { const v = localStorage.getItem(k); return v == null ? f : JSON.parse(v); } catch { return f; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const localId = () => 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const normTag = t => String(t).toLowerCase().replace(/^#+/, '').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+const hue = t => { let h = 0; for (const c of t) h = (h * 31 + c.codePointAt(0)) % 360; return h; };
+const tagHTML = (t, extra = '', el = 'span') => `<${el} class="tag ${extra}" style="--h:${hue(t)}" ${el === 'button' ? `type="button" data-tag="${esc(t)}"` : ''}>#${esc(t)}</${el}>`;
+
+/* ---------- state ---------- */
+const state = {
+  live: new Map(), older: new Map(), hitLimit: false, olderDone: false,
+  sel: new Set(), store: null, readOnly: false, currency: lsGet('tl.currency', 'INR'),
+  f: Object.assign({ q: '', type: 'all', period: 'month', from: '', to: '', tags: [], mode: 'any' }, lsGet('tl.filters', {})),
+};
+const all = () => { const m = new Map(state.older); for (const [k, v] of state.live) m.set(k, v); return m; };
+const saveFilters = () => lsSet('tl.filters', state.f);
+
+let fmtCache = {};
+function money(n, signed) {
+  const key = state.currency;
+  if (!fmtCache[key]) fmtCache = { [key]: new Intl.NumberFormat(key === 'INR' ? 'en-IN' : 'en', { style: 'currency', currency: key, maximumFractionDigits: 2, minimumFractionDigits: 0 }) };
+  const s = fmtCache[key].format(Math.abs(n));
+  return signed ? (n < 0 ? '−' : '+') + s : (n < 0 ? '−' + s : s);
+}
+
+/* ---------- stores ---------- */
+function makeQueue() {
+  const chains = new Map();
+  return (id, fn) => { const p = (chains.get(id) || Promise.resolve()).catch(() => {}).then(fn); chains.set(id, p); return p; };
+}
+function dbStore(db) {
+  const col = db.collection('expenses');
+  const q = makeQueue();
+  const toRow = d => ({ id: d.id, ...d.data() });
+  return {
+    kind: 'db',
+    newId: () => col.doc().id,
+    subscribe(onData, onErr) {
+      return col.orderBy('date', 'desc').limit(1000).onSnapshot(s => onData(s.docs.map(toRow), s.size >= 1000), onErr);
+    },
+    put: (id, data) => q(id, () => col.doc(id).set(data)),
+    remove: id => q(id, () => col.doc(id).delete()),
+    async older(beforeDate) {
+      const s = await col.where('date', '<=', beforeDate).orderBy('date', 'desc').limit(1000).get();
+      return { rows: s.docs.map(toRow), full: s.size >= 1000 };
+    },
+    async getSetting() { const s = await db.doc('meta/settings').get(); return s.exists ? s.data() : null; },
+    setSetting: data => q('meta', () => db.doc('meta/settings').set(data)),
+  };
+}
+function localStore() {
+  let rows = lsGet('tl.local', {});
+  let cb = null;
+  const flush = () => { lsSet('tl.local', rows); cb && cb(Object.entries(rows).map(([id, v]) => ({ id, ...v })), false); };
+  return {
+    kind: 'local', newId: localId,
+    subscribe(onData) { cb = onData; setTimeout(flush, 0); return () => { cb = null; }; },
+    put: async (id, data) => { rows[id] = data; flush(); },
+    remove: async id => { delete rows[id]; flush(); },
+    older: async () => ({ rows: [], full: false }),
+    getSetting: async () => null, setSetting: async () => {},
+  };
+}
+
+/* ---------- filtering ---------- */
+function periodRange() {
+  const f = state.f, now = new Date();
+  if (f.period === 'month') return [iso(new Date(now.getFullYear(), now.getMonth(), 1)), iso(new Date(now.getFullYear(), now.getMonth() + 1, 0))];
+  if (f.period === 'last') return [iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)), iso(new Date(now.getFullYear(), now.getMonth(), 0))];
+  if (f.period === 'year') return [`${now.getFullYear()}-01-01`, `${now.getFullYear()}-12-31`];
+  if (f.period === 'custom') return [f.from || '0000-01-01', f.to || '9999-12-31'];
+  return ['0000-01-01', '9999-12-31'];
+}
+function periodLabel() {
+  const f = state.f, now = new Date(), mf = d => d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  if (f.period === 'month') return mf(now);
+  if (f.period === 'last') return mf(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  if (f.period === 'year') return String(now.getFullYear());
+  if (f.period === 'custom') return `${f.from ? fmtDay(f.from, true) : 'Start'} → ${f.to ? fmtDay(f.to, true) : 'today'}`;
+  return 'All time';
+}
+function splitQuery(q) {
+  const tags = [], words = [];
+  for (const tok of q.trim().split(/\s+/)) { if (!tok) continue; if (tok.startsWith('#') && tok.length > 1) tags.push(normTag(tok)); else words.push(tok.toLowerCase()); }
+  return { tags, words };
+}
+function inPeriodRows() {
+  const [a, b] = periodRange();
+  return [...all().values()].filter(e => e.date >= a && e.date <= b);
+}
+function filtered() {
+  const f = state.f, { tags: qTags, words } = splitQuery(f.q);
+  const want = [...new Set([...f.tags, ...qTags])];
+  return inPeriodRows().filter(e => {
+    if (f.type !== 'all' && e.type !== f.type) return false;
+    const et = e.tags || [];
+    if (want.length) {
+      if (f.mode === 'all' || qTags.length && !f.tags.length) { if (!want.every(t => et.includes(t))) return false; }
+      else if (!want.some(t => et.includes(t))) return false;
+    }
+    if (words.length) {
+      const hay = `${e.title || ''} ${e.note || ''} ${et.join(' ')} ${e.amount}`.toLowerCase();
+      if (!words.every(w => hay.includes(w))) return false;
+    }
+    return true;
+  }).sort((x, y) => (y.date || '').localeCompare(x.date || '') || (y.createdAt || 0) - (x.createdAt || 0));
+}
+function tagCounts(rows) {
+  const m = new Map();
+  for (const e of rows) for (const t of e.tags || []) m.set(t, (m.get(t) || 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+const allTags = () => tagCounts([...all().values()]);
+
+/* ---------- rendering ---------- */
+function fmtDay(s, short) {
+  const d = parseISO(s);
+  if (!short) { if (s === todayISO()) return 'Today'; if (s === todayISO(-1)) return 'Yesterday'; }
+  return d.toLocaleDateString('en-GB', short ? { day: 'numeric', month: 'short', year: 'numeric' } : { weekday: 'short', day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+}
+function setSeg(el, v) { for (const b of el.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === v)); }
+
+let renderQueued = false;
+function render() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(() => { renderQueued = false; doRender(); }); } }
+function doRender() {
+  const f = state.f;
+  setSeg($('#typeSeg'), f.type); setSeg($('#periodSeg'), f.period);
+  $('#rangeBox').hidden = f.period !== 'custom';
+  if (document.activeElement !== $('#search')) $('#search').value = f.q;
+  $('#from').value = f.from; $('#to').value = f.to;
+
+  const rows = filtered();
+  renderCloud();
+  renderList(rows);
+  renderSummary(rows);
+
+  const samples = [...all().values()].filter(e => e.sample).length;
+  $('#sampleBanner').hidden = !samples || state.readOnly;
+  $('#sampleText').textContent = `${samples} example ${samples === 1 ? 'entry is' : 'entries are'} shown so you can try things out. Your own entries are kept when you remove them.`;
+  const sel = [...state.sel].filter(id => all().has(id));
+  state.sel = new Set(sel);
+  $('#bulk').hidden = !sel.length;
+  $('#bulkCount').textContent = `${sel.length} selected`;
+  $('#more').hidden = !(state.hitLimit && !state.olderDone);
+  $('#expNote').textContent = rows.length ? `Exports the ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} shown, with your filters applied.` : 'Nothing to export with the current filters.';
+}
+function renderCloud() {
+  const f = state.f, counts = tagCounts(inPeriodRows());
+  const shown = new Set(counts.map(c => c[0]));
+  for (const t of f.tags) if (!shown.has(t)) counts.push([t, 0]);
+  if (!counts.length) { $('#cloud').innerHTML = `<span class="lbl">Tags</span><span class="small-note" style="margin:0">Tags you add will appear here.</span>`; return; }
+  $('#cloud').innerHTML = `<span class="lbl">Tags</span>` + counts.slice(0, 40).map(([t, n]) =>
+    `<button type="button" class="tag ${f.tags.includes(t) ? 'on' : ''}" style="--h:${hue(t)}" data-tag="${esc(t)}" aria-pressed="${f.tags.includes(t)}">#${esc(t)}<span class="ct">${n}</span></button>`).join('')
+    + (f.tags.length > 1 ? `<button type="button" class="linkish" id="modeBtn">Match ${f.mode === 'all' ? 'all tags' : 'any tag'}</button>` : '')
+    + (f.tags.length ? `<button type="button" class="linkish" id="clearTags">Clear</button>` : '');
+}
+function renderList(rows) {
+  const list = $('#list');
+  if (!rows.length) {
+    const any = all().size;
+    list.innerHTML = any
+      ? `<div class="empty"><h3>No entries match</h3><p>Try another period, or clear the search and tag filters.</p><button class="btn" type="button" id="resetFilters">Reset filters</button></div>`
+      : `<div class="empty"><h3>Your ledger is empty</h3><p>Type <code>120 chai #food</code> in the box above and press Enter.<br>That's an expense of 120, titled “chai”, tagged #food, dated today.</p></div>`;
+    return;
+  }
+  const groups = new Map();
+  for (const e of rows) { if (!groups.has(e.date)) groups.set(e.date, []); groups.get(e.date).push(e); }
+  let html = '';
+  for (const [date, es] of groups) {
+    const net = es.reduce((s, e) => s + (e.type === 'income' ? e.amount : -e.amount), 0);
+    html += `<div class="day"><div class="day-head"><span>${esc(fmtDay(date))}</span><span class="num">${money(net)}</span></div>`;
+    for (const e of es) {
+      const sel = state.sel.has(e.id);
+      html += `<div class="row ${sel ? 'sel' : ''}" data-id="${esc(e.id)}">
+        <input type="checkbox" class="selbox" aria-label="Select ${esc(e.title)}" ${sel ? 'checked' : ''} ${state.readOnly ? 'disabled' : ''}>
+        <div style="min-width:0"><div class="row-title">${esc(e.title || 'Untitled')}${e.note ? ` <span class="row-note">· ${esc(e.note)}</span>` : ''}</div>
+          ${(e.tags || []).length ? `<div class="row-tags">${e.tags.map(t => tagHTML(t, state.f.tags.includes(t) ? 'on' : '', 'button')).join('')}</div>` : ''}</div>
+        <div class="amt ${e.type}">${e.type === 'income' ? '+' : '−'}${esc(money(e.amount))}</div>
+        <button type="button" class="icon repeat" title="Add again for today" aria-label="Add again for today" ${state.readOnly ? 'hidden' : ''}>↻</button>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  list.innerHTML = html;
+}
+function renderSummary(rows) {
+  const spent = rows.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0);
+  const inc = rows.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+  $('#periodName').textContent = periodLabel() + (state.f.tags.length || state.f.q ? ' · filtered' : '');
+  $('#spent').textContent = money(spent);
+  $('#income').textContent = money(inc);
+  const net = inc - spent;
+  $('#net').textContent = money(net, true); $('#net').className = 'num ' + (net < 0 ? 'neg' : 'earn');
+  $('#count').textContent = rows.length;
+  const [a, b] = periodRange();
+  const dates = rows.map(e => e.date).sort();
+  const start = a === '0000-01-01' ? dates[0] : a;
+  let end = b < todayISO() ? b : todayISO();
+  if (start && end < start) end = dates[dates.length - 1] || start;
+  const days = start && end ? Math.max(1, Math.round((parseISO(end) - parseISO(start)) / 864e5) + 1) : 0;
+  $('#avg').textContent = days ? money(spent / days) : '—';
+
+  const m = new Map();
+  for (const e of rows) if (e.type !== 'income') for (const t of (e.tags && e.tags.length ? e.tags : ['untagged'])) m.set(t, (m.get(t) || 0) + e.amount);
+  const top = [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 8);
+  const max = top.length ? top[0][1] : 1;
+  $('#bars').innerHTML = top.length ? top.map(([t, v]) => `<button type="button" class="bar" style="--h:${hue(t)}" data-tag="${t === 'untagged' ? '' : esc(t)}">
+      <span>${tagHTML(t)}</span><span class="num">${esc(money(v))}</span><span class="track"><span class="fill" style="display:block;width:${Math.max(2, v / max * 100)}%"></span></span></button>`).join('')
+    : `<p class="small-note" style="margin:0">No spending in this view yet.</p>`;
+}
+
+/* ---------- toasts ---------- */
+function toast(msg, action, fn, ms = 5000) {
+  const el = document.createElement('div'); el.className = 'toast';
+  el.innerHTML = `<span>${esc(msg)}</span>` + (action ? `<button type="button">${esc(action)}</button>` : '');
+  if (action) el.querySelector('button').onclick = () => { el.remove(); fn(); };
+  $('#toasts').appendChild(el); setTimeout(() => el.remove(), ms);
+}
+function writeError(e) {
+  if (e && e.code === 'invalid_argument' && state.store.kind === 'db') { setReadOnly(true); toast('You can view this ledger but not change it.'); return; }
+  if (e && e.code === 'quota_exceeded') { toast('Storage is full. Export and delete old entries to make room.', null, null, 9000); return; }
+  toast('Could not save that change. Check your connection and try again.');
+}
+
+/* ---------- writes ---------- */
+function cleanEntry(e) {
+  const out = { title: String(e.title || '').trim().slice(0, 200) || 'Untitled', amount: Math.round(Math.abs(+e.amount) * 100) / 100,
+    type: e.type === 'income' ? 'income' : 'expense', date: e.date || todayISO(), tags: [...new Set((e.tags || []).map(normTag).filter(Boolean))].slice(0, 20),
+    note: String(e.note || '').trim().slice(0, 1000), createdAt: e.createdAt || Date.now(), updatedAt: Date.now() };
+  if (e.payee) out.payee = String(e.payee).slice(0, 100);
+  if (e.ref) out.ref = String(e.ref).slice(0, 40);
+  return out;
+}
+function touchOlder(id, data) { if (state.older.has(id)) { data ? state.older.set(id, { id, ...data }) : state.older.delete(id); render(); } }
+async function put(id, data) {
+  if (state.readOnly) return false;
+  try { await state.store.put(id, data); touchOlder(id, data); return true; } catch (e) { writeError(e); return false; }
+}
+async function add(entry) {
+  const id = state.store.newId(), data = cleanEntry(entry);
+  if (await put(id, data)) return id;
+}
+async function removeMany(ids, label) {
+  const items = ids.map(id => all().get(id)).filter(Boolean);
+  if (!items.length) return;
+  try { await Promise.all(items.map(e => state.store.remove(e.id).then(() => touchOlder(e.id, null)))); }
+  catch (e) { writeError(e); return; }
+  ids.forEach(id => state.sel.delete(id));
+  toast(label || `Deleted ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`, 'Undo', async () => {
+    for (const { id, ...data } of items) await put(id, data);
+  }, 7000);
+}
+async function repeatToday(id) {
+  const e = all().get(id); if (!e) return;
+  const { id: _, sample, createdAt, ...rest } = e;
+  const nid = await add({ ...rest, date: todayISO() });
+  if (nid) announceAdd(nid, `Added ${e.title} again for today`);
+}
+
+// After an add, say so; if the current filters hide the new entry, offer to clear them.
+function announceAdd(id, msg) {
+  setTimeout(() => {
+    if (filtered().some(e => e.id === id)) return toast(msg, 'Edit', () => openEditor(id));
+    toast(`${msg}. Your filters hide it.`, 'Show it', () => {
+      const e = all().get(id);
+      Object.assign(state.f, { q: '', type: 'all', tags: [] });
+      if (e) { const [a, b] = periodRange(); if (e.date < a || e.date > b) state.f.period = 'all'; }
+      saveFilters(); render();
+    }, 8000);
+  }, 50);
+}
+
+/* ---------- quick add ---------- */
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+function parseDateTok(t) {
+  t = t.toLowerCase();
+  if (t === 'today' || t === 't') return todayISO();
+  if (t === 'yesterday' || t === 'y' || t === 'yday') return todayISO(-1);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  let m = t.match(/^(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?$/);
+  if (m) { const now = new Date(); let y = m[3] ? +m[3] : now.getFullYear(); if (y < 100) y += 2000; const d = new Date(y, +m[2] - 1, +m[1]); if (!m[3] && d > now) d.setFullYear(y - 1); return d.getDate() === +m[1] ? iso(d) : null; }
+  const wd = WEEKDAYS.indexOf(t.slice(0, 3));
+  if (wd >= 0 && t.length >= 3) { const d = new Date(); let diff = (d.getDay() - wd + 7) % 7 || 7; d.setDate(d.getDate() - diff); return iso(d); }
+  m = t.match(/^(\d+)d$/); if (m) return todayISO(-+m[1]);
+  return null;
+}
+function parseQuick(s) {
+  const out = { type: 'expense', amount: null, tags: [], date: todayISO(), words: [] };
+  for (const tok of s.trim().split(/\s+/)) {
+    if (!tok) continue;
+    if (tok[0] === '#' && tok.length > 1) { const t = normTag(tok); if (t) out.tags.push(t); continue; }
+    if (tok[0] === '@' && tok.length > 1) { const d = parseDateTok(tok.slice(1)); if (d) { out.date = d; continue; } }
+    if (out.amount === null) {
+      const m = tok.match(/^([+-]?)(?:₹|\$|€|£|rs\.?|inr)?(\d[\d,]*(?:\.\d+)?|\.\d+)(k)?$/i);
+      if (m) { out.amount = parseFloat(m[2].replace(/,/g, '')) * (m[3] ? 1000 : 1); if (m[1] === '+') out.type = 'income'; continue; }
+    }
+    out.words.push(tok);
+  }
+  out.tags = [...new Set(out.tags)];
+  out.title = out.words.join(' ') || (out.tags[0] ? out.tags[0][0].toUpperCase() + out.tags[0].slice(1) : '');
+  if (out.tags.includes('income') || out.tags.includes('salary')) out.type = 'income';
+  return out;
+}
+function currentHashWord(input) {
+  const pos = input.selectionStart ?? input.value.length, before = input.value.slice(0, pos);
+  const m = before.match(/(^|\s)#([^\s#]*)$/); return m ? { prefix: normTag(m[2]) || '', start: pos - m[2].length - 1, end: pos } : null;
+}
+function quickPreview() {
+  const v = $('#quick').value, box = $('#quickPreview');
+  if (!v.trim()) { box.innerHTML = box.dataset.hint; } else {
+    const p = parseQuick(v);
+    box.innerHTML = p.amount == null
+      ? `<span>Add an amount, like <b>250</b> or <b>1.2k</b></span>`
+      : `<b class="${p.type === 'income' ? 'amt income' : 'amt'}">${p.type === 'income' ? '+' : '−'}${esc(money(p.amount))}</b><span>${esc(p.title || 'Untitled')}</span>${p.tags.map(t => tagHTML(t)).join('')}<span>${esc(fmtDay(p.date))}</span><span class="hint">· <kbd>Enter</kbd> to save</span>`;
+  }
+  const hw = currentHashWord($('#quick')), sg = $('#quickSuggest');
+  const opts = hw ? allTags().map(x => x[0]).filter(t => t.startsWith(hw.prefix) && t !== hw.prefix).slice(0, 10) : [];
+  sg.hidden = !opts.length;
+  sg.innerHTML = opts.map((t, i) => tagHTML(t, i === 0 ? 'on' : '', 'button')).join('') + (opts.length ? `<span class="hint" style="font-size:12px;color:var(--muted);align-self:center">Tab to complete</span>` : '');
+}
+function completeTag(t) {
+  const inp = $('#quick'), hw = currentHashWord(inp); if (!hw) return;
+  inp.value = inp.value.slice(0, hw.start) + '#' + t + ' ' + inp.value.slice(hw.end);
+  const p = hw.start + t.length + 2; inp.setSelectionRange(p, p); inp.focus(); quickPreview();
+}
+
+/* ---------- editor ---------- */
+const ed = { id: null, type: 'expense', tags: [], base: null };
+function openEditor(id, preset) {
+  if (state.readOnly) return;
+  const e = id ? all().get(id) : null;
+  ed.id = e ? id : null; ed.base = e;
+  const src = e || preset || {};
+  ed.type = src.type || 'expense'; ed.tags = [...(src.tags || state.f.tags)];
+  $('#edTitle').textContent = e ? 'Edit entry' : 'New entry';
+  $('#edAmount').value = src.amount ?? ''; $('#edName').value = src.title || ''; $('#edDate').value = src.date || todayISO(); $('#edNote').value = src.note || '';
+  $('#edDelete').hidden = !e; $('#edDup').hidden = !e; $('#edErr').hidden = true;
+  drawEdTags(); setSeg($('#edType'), ed.type);
+  $('#overlay').hidden = false;
+  setTimeout(() => (e ? $('#edAmount') : $('#edAmount')).focus(), 30);
+}
+function closeEditor() { $('#overlay').hidden = true; }
+function drawEdTags() {
+  const box = $('#edTags'), inp = $('#edTagInput');
+  box.querySelectorAll('.tag').forEach(n => n.remove());
+  for (const t of ed.tags) { const s = document.createElement('span'); s.className = 'tag'; s.style.setProperty('--h', hue(t)); s.innerHTML = `#${esc(t)}<button type="button" aria-label="Remove ${esc(t)}" data-rm="${esc(t)}">✕</button>`; box.insertBefore(s, inp); }
+  const pre = normTag(inp.value);
+  const sugg = allTags().map(x => x[0]).filter(t => !ed.tags.includes(t) && (!pre || t.startsWith(pre))).slice(0, 12);
+  $('#edSugg').innerHTML = sugg.map(t => tagHTML(t, '', 'button')).join('');
+}
+function commitTagInput() { const inp = $('#edTagInput'); const parts = inp.value.split(/[\s,]+/).map(normTag).filter(Boolean); for (const p of parts) if (!ed.tags.includes(p)) ed.tags.push(p); inp.value = ''; drawEdTags(); }
+function readEditor() {
+  commitTagInput();
+  const raw = $('#edAmount').value.replace(/[,\s₹$€£]/g, '');
+  let amount = raw.match(/^[+-]?\d*\.?\d+(k)?$/i) ? parseFloat(raw) * (/k$/i.test(raw) ? 1000 : 1) : NaN;
+  if (isNaN(amount) && /^\d*\.?\d+([+-]\d*\.?\d+)+$/.test(raw)) amount = raw.match(/[+-]?\d*\.?\d+/g).reduce((s, x) => s + parseFloat(x), 0);
+  if (!isFinite(amount) || amount <= 0) { $('#edErr').textContent = 'Enter an amount above zero, like 250 or 120+80.'; $('#edErr').hidden = false; $('#edAmount').focus(); return null; }
+  if (!$('#edDate').value) { $('#edErr').textContent = 'Pick a date.'; $('#edErr').hidden = false; return null; }
+  return { type: ed.type, amount, title: $('#edName').value, date: $('#edDate').value, tags: ed.tags, note: $('#edNote').value };
+}
+
+/* ---------- export ---------- */
+function exportRows(rows) {
+  return rows.map(e => ({ Date: e.date, Title: e.title, Type: e.type === 'income' ? 'Income' : 'Expense', Amount: e.amount,
+    'Signed amount': e.type === 'income' ? e.amount : -e.amount, Tags: (e.tags || []).map(t => '#' + t).join(' '), Note: e.note || '', Currency: state.currency }));
+}
+const fileStem = () => `tag-ledger-${periodLabel().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${todayISO()}`;
+const COLS = ['Date', 'Title', 'Type', 'Amount', 'Signed amount', 'Tags', 'Note', 'Currency'];
+function toDelimited(rows, sep) {
+  const cell = v => { v = String(v ?? ''); if (sep === '\t') return v.replace(/[\t\n\r]+/g, ' '); return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  return [COLS.join(sep), ...rows.map(r => COLS.map(c => cell(r[c])).join(sep))].join('\n');
+}
+let downloads = null;
+async function save(filename, data) {
+  if (!downloads && !window.claude) { // opened as a plain file or on localhost, outside the Claude viewer
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data])); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); return;
+  }
+  if (!downloads) { toast('File downloads are not available here. Use “Copy for Google Sheets” instead.', null, null, 7000); return; }
+  try { await downloads.save({ filename, data }); }
+  catch (e) {
+    if (e && e.code === 'declined') return;
+    if (e && e.code === 'rate_limited') { toast('A save is already waiting for your answer.'); return; }
+    toast('That file could not be saved here. Try “Copy for Google Sheets”.', null, null, 7000);
+  }
+}
+function exportCsv() { const rows = exportRows(filtered()); if (!rows.length) return toast('Nothing to export with the current filters.'); save(fileStem() + '.csv', '﻿' + toDelimited(rows, ',')); }
+function exportXlsx() {
+  const list = filtered(); if (!list.length) return toast('Nothing to export with the current filters.');
+  if (typeof XLSX === 'undefined') return toast('The spreadsheet library did not load. Use CSV instead.');
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(exportRows(list), { header: COLS });
+  ws['!cols'] = [{ wch: 11 }, { wch: 32 }, { wch: 9 }, { wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 36 }, { wch: 9 }];
+  ws['!autofilter'] = { ref: ws['!ref'] };
+  XLSX.utils.book_append_sheet(wb, ws, 'Entries');
+  const m = new Map();
+  for (const e of list) for (const t of (e.tags && e.tags.length ? e.tags : ['untagged'])) {
+    const r = m.get(t) || { Tag: '#' + t, Spent: 0, Income: 0, Entries: 0 };
+    r[e.type === 'income' ? 'Income' : 'Spent'] += e.amount; r.Entries++; m.set(t, r);
+  }
+  const ws2 = XLSX.utils.json_to_sheet([...m.values()].sort((a, b) => b.Spent - a.Spent), { header: ['Tag', 'Spent', 'Income', 'Entries'] });
+  ws2['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'By tag');
+  save(fileStem() + '.xlsx', XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
+}
+function exportCopy() {
+  const rows = exportRows(filtered()); if (!rows.length) return toast('Nothing to export with the current filters.');
+  const tsv = toDelimited(rows, '\t'), box = $('#copyBox');
+  const fallback = () => { box.hidden = false; box.value = tsv; box.focus(); box.select(); toast('Press Ctrl/Cmd+C to copy, then paste into cell A1 of a sheet.', null, null, 7000); };
+  try { navigator.clipboard.writeText(tsv).then(() => { box.hidden = true; toast(`Copied ${rows.length} rows. Paste into cell A1 of a Google Sheet.`); }, fallback); } catch { fallback(); }
+}
+
+/* ---------- import ---------- */
+function toISODate(v) {
+  if (v instanceof Date && !isNaN(v)) return iso(v);
+  if (typeof v === 'number' && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 864e5)); return iso(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); }
+  const s = String(v ?? '').trim(); if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/); if (m) { let y = +m[3]; if (y < 100) y += 2000; return `${y}-${pad(m[2])}-${pad(m[1])}`; }
+  const d = new Date(s); return isNaN(d) ? null : iso(d);
+}
+async function importFile(file) {
+  if (typeof XLSX === 'undefined') return toast('The spreadsheet library did not load, so import is unavailable.');
+  let grid;
+  try { const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true }); grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' }); }
+  catch { return toast('That file could not be read. Use a .csv or .xlsx file.'); }
+  if (grid.length < 2) return toast('That file has no rows to import.');
+  const head = grid[0].map(h => String(h).trim().toLowerCase());
+  const find = (...names) => head.findIndex(h => names.includes(h));
+  const ci = { date: find('date', 'date & time', 'datetime', 'time', 'transaction date'), title: find('title', 'name', 'description', 'payee', 'details'),
+    amount: find('amount', 'value', 'signed amount'), type: find('type', 'income/expense'), tags: find('tags', 'tag', 'labels', 'label'),
+    cat: find('category', 'category name', 'subcategory'), note: find('note', 'notes', 'memo') };
+  if (ci.date < 0 || ci.amount < 0) return toast('The first row needs Date and Amount columns.', null, null, 7000);
+  const body = grid.slice(1);
+  const anyNeg = ci.type < 0 && body.some(r => parseFloat(String(r[ci.amount]).replace(/[^\d.-]/g, '')) < 0);
+  const entries = [];
+  let skipped = 0;
+  for (const r of body) {
+    const date = toISODate(r[ci.date]); const n = parseFloat(String(r[ci.amount]).replace(/[^\d.-]/g, ''));
+    if (!date || !isFinite(n) || n === 0) { skipped++; continue; }
+    let type = 'expense';
+    if (ci.type >= 0) type = /inc|credit|in$/i.test(String(r[ci.type])) ? 'income' : 'expense';
+    else if (anyNeg) type = n < 0 ? 'expense' : 'income';
+    const tags = String(ci.tags >= 0 ? r[ci.tags] : '').split(/[\s,;|]+/).map(normTag).filter(Boolean);
+    if (ci.cat >= 0 && r[ci.cat]) tags.push(normTag(r[ci.cat]));
+    entries.push(cleanEntry({ date, amount: Math.abs(n), type, tags, title: ci.title >= 0 ? r[ci.title] : (tags[0] || ''), note: ci.note >= 0 ? r[ci.note] : '' }));
+  }
+  if (!entries.length) return toast('No rows had a valid date and amount.');
+  toast(`Importing ${entries.length} entries…`, null, null, 3000);
+  let ok = 0;
+  for (let i = 0; i < entries.length; i += 10) {
+    const chunk = entries.slice(i, i + 10);
+    const res = await Promise.all(chunk.map(e => state.store.put(state.store.newId(), e).then(() => 1, () => 0)));
+    ok += res.reduce((a, b) => a + b, 0);
+  }
+  state.f.period = 'all'; saveFilters(); render();
+  toast(`Imported ${ok} of ${entries.length} entries${skipped ? `, skipped ${skipped} rows without a date or amount` : ''}.`, null, null, 8000);
+}
+
+/* ---------- phone inbox (bank SMS → pending entries) ---------- */
+const DEBIT_RE = /\b(debited|paid|sent|spent|withdrawn|purchase|transferred|txn of|payment of)\b/i;
+const CREDIT_RE = /\b(credited|received|deposited|refund(?:ed)?)\b/i;
+const SKIP_RE = /\b(otp|will be debited|is due|due on|requested|request(?:ing)? money|collect request|mandate|autopay set|offer|pre-approved|apply now|failed|declined|reversed)\b/i;
+function smsPayee(t, credit) {
+  const bad = s => !s || /\b(a\/c|acct|account|bank|card|xx\d|\*\d|your|upi id)\b/i.test(s) || /^\d+$/.test(s);
+  const stop = String.raw`(?=\s+(?:on|ref|refno|ref\s*no|upi|via|avl|avbl|bal|not|if|dt|date|thru|using)\b|\.(?=\s|$)|[;,(]|\s*$)`;
+  const tries = [
+    /;\s*([A-Za-z][A-Za-z0-9 .&'-]{1,40}?)\s+credited/i,                       // ICICI: "...; JOHN DOE credited."
+    /UPI\/(?:P2[AM]\/)?\d+\/([^\/]{2,40}?)(?:\/|\s+not\b|\s*$|\.)/i,           // Axis/Kotak: "UPI/P2M/1234/SWIGGY/..."
+    new RegExp(String.raw`\b(?:trf to|paid to|sent to|to vpa|to|at|towards|info:?)\s+([A-Za-z0-9@._&' -]{2,40}?)` + stop, 'i'),
+  ];
+  if (credit) tries.unshift(new RegExp(String.raw`\b(?:from|by)\s+(?:vpa\s+)?([A-Za-z0-9@._&' -]{2,40}?)` + stop, 'i'));
+  for (const re of tries) {
+    const m = t.match(re); if (!m) continue;
+    const v = m[1].trim().replace(/^(?:neft|imps|rtgs|upi|vpa)\s+(?:from|to|by)?\s*/i, '').replace(/^(?:from|to)\s+/i, '');
+    if (!bad(v)) return v;
+  }
+  return '';
+}
+function prettyPayee(p) {
+  if (!p) return '';
+  if (p.includes('@')) p = p.split('@')[0].replace(/[._-]+/g, ' ').replace(/\d{4,}/g, '').trim() || p;
+  return p.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).slice(0, 60);
+}
+// Reads one bank SMS or Google Pay notification. Returns null for anything that isn't a completed payment.
+function parseBankSms(text, receivedMs) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t || SKIP_RE.test(t)) return null;
+  const d = t.search(DEBIT_RE), c = t.search(CREDIT_RE);
+  if (d < 0 && c < 0) return null;
+  const credit = c >= 0 && (d < 0 || c < d);
+  let m = t.match(/(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i) || t.match(/\b(?:debited|credited|paid|sent|received)\s+(?:by|with|for|of)?\s*([\d,]+(?:\.\d{1,2})?)\b/i);
+  if (!m) return null;
+  const amount = parseFloat(m[1].replace(/,/g, ''));
+  if (!isFinite(amount) || amount <= 0) return null;
+  const refM = t.match(/(?:ref(?:erence)?(?:\s*no)?|refno|upi(?:\s*ref)?(?:\s*no)?|upi transaction id|transaction id|rrn|txn\s*id)[\s.:#-]*(\d{6,})/i) || t.match(/UPI\/(?:P2[AM]\/)?(\d{6,})/i);
+  const payee = smsPayee(t, credit);
+  const date = iso(new Date(receivedMs || Date.now()));
+  return { amount, type: credit ? 'income' : 'expense', payee, title: prettyPayee(payee) || (credit ? 'Money received' : 'UPI payment'), ref: refM ? refM[1] : '', date, raw: t };
+}
+const inbox = {
+  cfg: lsGet('tl.inboxCfg', { url: '', token: '' }),
+  pending: lsGet('tl.inboxPending', []),
+  done: new Set(lsGet('tl.inboxDone', [])),
+  since: lsGet('tl.inboxSince', 0),
+  timer: null, busy: false,
+};
+const saveInbox = () => { lsSet('tl.inboxPending', inbox.pending); lsSet('tl.inboxDone', [...inbox.done].slice(-3000)); lsSet('tl.inboxSince', inbox.since); };
+const dupKey = p => p.ref ? 'ref:' + p.ref : `amt:${p.type}:${p.amount}:${Math.floor((p.receivedMs || 0) / 120000)}`;
+function knownRefs() { const s = new Set(); for (const e of all().values()) if (e.ref) s.add(e.ref); return s; }
+function learnFromHistory(payee) {
+  if (!payee) return null;
+  const k = payee.toLowerCase(); let best = null;
+  for (const e of all().values()) if ((e.payee || '').toLowerCase() === k && (!best || (e.createdAt || 0) > (best.createdAt || 0))) best = e;
+  return best;
+}
+function queueMessages(msgs) {
+  const refs = knownRefs(); let added = 0;
+  const keys = new Set(inbox.pending.map(dupKey));
+  for (const msg of msgs) {
+    if (inbox.done.has(msg.id)) continue;
+    inbox.done.add(msg.id);
+    const p = parseBankSms(msg.text, msg.received);
+    if (!p) continue;
+    p.id = msg.id; p.receivedMs = msg.received || Date.now();
+    const k = dupKey(p);
+    if ((p.ref && refs.has(p.ref)) || keys.has(k) || inbox.done.has(k)) continue;
+    const prev = learnFromHistory(p.payee);
+    p.tags = prev ? [...(prev.tags || [])] : [];
+    if (prev && prev.title) p.title = prev.title;
+    inbox.pending.push(p); keys.add(k); added++;
+  }
+  inbox.pending.sort((a, b) => b.receivedMs - a.receivedMs);
+  saveInbox(); renderInbox();
+  return added;
+}
+function setInboxStatus(msg, warn) { const el = $('#inboxStatus'); el.textContent = msg; el.style.color = warn ? 'var(--spend)' : ''; }
+async function checkInbox(manual) {
+  const { url, token } = inbox.cfg;
+  if (!url || inbox.busy || state.readOnly) return;
+  inbox.busy = true;
+  try {
+    const u = new URL(url); u.searchParams.set('token', token); u.searchParams.set('since', String(inbox.since || 0));
+    const res = await fetch(u.toString(), { redirect: 'follow' });
+    const body = await res.json();
+    if (!body.ok) throw new Error(body.error === 'bad token' ? 'The secret does not match the one in your Apps Script.' : (body.error || 'The inbox answered with an error.'));
+    const rows = body.rows || [];
+    for (const r of rows) inbox.since = Math.max(inbox.since, +r.received || 0);
+    const n = queueMessages(rows);
+    setInboxStatus(`Checked at ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · ${n ? n + ' new payment' + (n === 1 ? '' : 's') : 'nothing new'}`);
+    if (n && !manual) toast(`${n} new payment${n === 1 ? '' : 's'} from your phone to review`);
+  } catch (e) {
+    const blocked = window.claude && !(e instanceof SyntaxError) && !String(e.message).includes('secret');
+    setInboxStatus(blocked ? 'This page can’t reach your inbox from inside claude.ai. Open the localhost version to sync, or paste an SMS below.' : (e.message && !/fetch|network/i.test(e.message) ? e.message : 'Could not reach the inbox. Check the URL and that the script is deployed for “Anyone”.'), true);
+  } finally { inbox.busy = false; }
+}
+function startInboxPolling() {
+  clearInterval(inbox.timer);
+  if (!inbox.cfg.url) { setInboxStatus('Not connected. Paste your Apps Script URL and secret to pull payments from your phone.'); return; }
+  checkInbox(true);
+  inbox.timer = setInterval(() => { if (document.visibilityState === 'visible') checkInbox(false); }, 60000);
+}
+function renderInbox() {
+  const box = $('#inbox'), list = inbox.pending;
+  box.hidden = !list.length || state.readOnly;
+  if (!list.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="inbox-head"><b>${list.length} payment${list.length === 1 ? '' : 's'} to review</b><span class="small-note" style="margin:0">From your bank SMS. Check the title and tags, then add.</span><span class="spacer"></span>
+      ${list.length > 1 ? `<button type="button" class="btn small" data-act="addall">Add all</button>` : ''}</div>` +
+    list.map(p => `<div class="pend" data-pid="${esc(p.id)}">
+      <div class="pend-amt amt ${p.type}">${p.type === 'income' ? '+' : '−'}${esc(money(p.amount))}</div>
+      <div class="pend-fields">
+        <input class="pend-title" aria-label="Title" value="${esc(p.title)}">
+        <input class="pend-tags" aria-label="Tags" placeholder="#tags" value="${esc((p.tags || []).map(t => '#' + t).join(' '))}">
+      </div>
+      <div class="pend-actions"><button type="button" class="btn small primary" data-act="add">Add</button><button type="button" class="btn small ghost" data-act="ignore">Ignore</button></div>
+      <div class="pend-raw" title="${esc(p.raw)}">${esc(fmtDay(p.date))} · ${esc(p.raw)}</div>
+    </div>`).join('');
+}
+function readPend(el, p) {
+  return { ...p, title: el.querySelector('.pend-title').value.trim() || p.title,
+    tags: el.querySelector('.pend-tags').value.split(/[\s,]+/).map(normTag).filter(Boolean) };
+}
+async function acceptPending(ids) {
+  let n = 0;
+  for (const pid of ids) {
+    const p = inbox.pending.find(x => x.id === pid); if (!p) continue;
+    const el = document.querySelector(`.pend[data-pid="${CSS.escape(pid)}"]`);
+    const v = el ? readPend(el, p) : p;
+    const id = await add({ type: v.type, amount: v.amount, title: v.title, date: v.date, tags: v.tags, note: '', payee: v.payee, ref: v.ref });
+    if (!id) break;
+    inbox.done.add(dupKey(p)); inbox.pending = inbox.pending.filter(x => x.id !== pid); n++;
+  }
+  saveInbox(); renderInbox();
+  if (n) toast(`Added ${n} payment${n === 1 ? '' : 's'}`);
+}
+function wireInbox() {
+  $('#inboxUrl').value = inbox.cfg.url; $('#inboxToken').value = inbox.cfg.token;
+  $('#inboxSave').onclick = () => {
+    const url = $('#inboxUrl').value.trim(), token = $('#inboxToken').value.trim();
+    if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url) && !/^https?:\/\/(localhost|127\.0\.0\.1)/.test(url)) { setInboxStatus('Use the Web app URL from Apps Script. It starts with https://script.google.com/', true); return; }
+    inbox.cfg = { url, token }; lsSet('tl.inboxCfg', inbox.cfg); startInboxPolling();
+  };
+  $('#inboxCheck').onclick = () => checkInbox(true);
+  $('#pasteRead').onclick = () => {
+    const parts = $('#pasteSms').value.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+    if (!parts.length) return;
+    const n = queueMessages(parts.map((text, i) => ({ id: 'paste-' + Date.now() + '-' + i, text, received: Date.now() })));
+    if (n) { $('#pasteSms').value = ''; toast(`${n} payment${n === 1 ? '' : 's'} ready to review`); }
+    else toast('No completed payment found in that text. Paste the full bank SMS.');
+  };
+  $('#inbox').addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    if (b.dataset.act === 'addall') return acceptPending(inbox.pending.map(p => p.id));
+    const pid = b.closest('.pend').dataset.pid;
+    if (b.dataset.act === 'add') acceptPending([pid]);
+    if (b.dataset.act === 'ignore') { const p = inbox.pending.find(x => x.id === pid); if (p) inbox.done.add(dupKey(p)); inbox.pending = inbox.pending.filter(x => x.id !== pid); saveInbox(); renderInbox(); }
+  });
+  $('#inbox').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('.pend input')) { e.preventDefault(); acceptPending([e.target.closest('.pend').dataset.pid]); } });
+  renderInbox(); startInboxPolling();
+}
+
+/* ---------- wiring ---------- */
+function setReadOnly(ro) {
+  state.readOnly = ro;
+  $('.quick').hidden = ro; $('#fab').hidden = ro; $('#importBtn').hidden = ro;
+  if (ro) { $('#sync').textContent = 'View only'; $('#sync').className = 'pill'; }
+  render();
+}
+function wire() {
+  const box = $('#quickPreview'); box.dataset.hint = box.innerHTML;
+  $('#quick').addEventListener('input', quickPreview);
+  $('#quick').addEventListener('click', quickPreview);
+  $('#quick').addEventListener('keydown', e => {
+    const first = $('#quickSuggest button');
+    if (e.key === 'Tab' && first && !$('#quickSuggest').hidden) { e.preventDefault(); completeTag(first.dataset.tag); }
+    if (e.key === 'Escape') { $('#quick').value = ''; quickPreview(); }
+  });
+  $('#quickSuggest').addEventListener('mousedown', e => { const b = e.target.closest('[data-tag]'); if (b) { e.preventDefault(); completeTag(b.dataset.tag); } });
+  $('#quick').addEventListener('blur', () => setTimeout(() => { $('#quickSuggest').hidden = true; }, 150));
+  $('#quickForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const v = $('#quick').value; if (!v.trim()) { openEditor(null); return; }
+    const p = parseQuick(v);
+    if (p.amount == null || p.amount <= 0) { openEditor(null, { ...p, amount: '' }); return; }
+    $('#quick').value = ''; quickPreview();
+    const id = await add(p);
+    if (id) announceAdd(id, `Added ${p.type === 'income' ? '+' : '−'}${money(p.amount)} ${p.title}`);
+    else $('#quick').value = v;
+  });
+
+  $('#search').addEventListener('input', e => { state.f.q = e.target.value; saveFilters(); render(); });
+  $('#typeSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.f.type = b.dataset.v; saveFilters(); render(); } });
+  $('#periodSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return; state.f.period = b.dataset.v;
+    if (b.dataset.v === 'custom' && !state.f.from) { state.f.from = todayISO(-30); state.f.to = todayISO(); }
+    saveFilters(); render();
+  });
+  $('#from').addEventListener('change', e => { state.f.from = e.target.value; saveFilters(); render(); });
+  $('#to').addEventListener('change', e => { state.f.to = e.target.value; saveFilters(); render(); });
+  const toggleTag = t => { if (!t) return; const i = state.f.tags.indexOf(t); i >= 0 ? state.f.tags.splice(i, 1) : state.f.tags.push(t); saveFilters(); render(); };
+  $('#cloud').addEventListener('click', e => {
+    if (e.target.id === 'modeBtn') { state.f.mode = state.f.mode === 'all' ? 'any' : 'all'; saveFilters(); return render(); }
+    if (e.target.id === 'clearTags') { state.f.tags = []; saveFilters(); return render(); }
+    const b = e.target.closest('[data-tag]'); if (b) toggleTag(b.dataset.tag);
+  });
+  $('#bars').addEventListener('click', e => { const b = e.target.closest('[data-tag]'); if (b) toggleTag(b.dataset.tag); });
+
+  $('#list').addEventListener('click', e => {
+    if (e.target.id === 'resetFilters') { Object.assign(state.f, { q: '', type: 'all', tags: [], period: 'all' }); saveFilters(); return render(); }
+    const row = e.target.closest('.row'); if (!row) return;
+    const id = row.dataset.id;
+    if (e.target.classList.contains('selbox')) { e.target.checked ? state.sel.add(id) : state.sel.delete(id); return render(); }
+    if (e.target.closest('.repeat')) return repeatToday(id);
+    const tg = e.target.closest('[data-tag]'); if (tg) return toggleTag(tg.dataset.tag);
+    if (state.sel.size) { state.sel.has(id) ? state.sel.delete(id) : state.sel.add(id); return render(); }
+    openEditor(id);
+  });
+
+  // bulk
+  const bulkTag = () => normTag($('#bulkTag').value);
+  const bulkEdit = async fn => {
+    const ids = [...state.sel]; const t = bulkTag(); if (!t) { $('#bulkTag').focus(); return toast('Type a tag first.'); }
+    let n = 0;
+    await Promise.all(ids.map(async id => { const e = all().get(id); if (!e) return; const { id: _, sample, ...rest } = e; const tags = fn(e.tags || [], t); if (tags) { if (await put(id, { ...rest, tags, updatedAt: Date.now() })) n++; } }));
+    toast(`Updated ${n} ${n === 1 ? 'entry' : 'entries'}`);
+  };
+  $('#bulkAdd').onclick = () => bulkEdit((tags, t) => tags.includes(t) ? null : [...tags, t]);
+  $('#bulkRemove').onclick = () => bulkEdit((tags, t) => tags.includes(t) ? tags.filter(x => x !== t) : null);
+  $('#bulkDelete').onclick = () => removeMany([...state.sel]);
+  $('#bulkClear').onclick = () => { state.sel.clear(); render(); };
+  $('#bulkTag').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#bulkAdd').click(); } });
+  $('#clearSamples').onclick = () => removeMany([...all().values()].filter(e => e.sample).map(e => e.id), 'Removed the examples');
+
+  // editor
+  $('#fab').onclick = () => openEditor(null);
+  $('#edClose').onclick = closeEditor;
+  $('#overlay').addEventListener('mousedown', e => { if (e.target.id === 'overlay') closeEditor(); });
+  $('#edType').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { ed.type = b.dataset.v; setSeg($('#edType'), ed.type); } });
+  $('#edDateQuick').addEventListener('click', e => { const b = e.target.closest('button'); if (b) $('#edDate').value = todayISO(+b.dataset.d); });
+  $('#edTags').addEventListener('click', e => { const r = e.target.closest('[data-rm]'); if (r) { ed.tags = ed.tags.filter(t => t !== r.dataset.rm); drawEdTags(); } else $('#edTagInput').focus(); });
+  $('#edSugg').addEventListener('click', e => { const b = e.target.closest('[data-tag]'); if (b) { ed.tags.push(b.dataset.tag); $('#edTagInput').value = ''; drawEdTags(); $('#edTagInput').focus(); } });
+  $('#edTagInput').addEventListener('keydown', e => {
+    if ([' ', ',', 'Enter'].includes(e.key) && e.target.value.trim()) { e.preventDefault(); commitTagInput(); }
+    else if (e.key === 'Enter') { e.preventDefault(); $('#editor').requestSubmit(); }
+    else if (e.key === 'Backspace' && !e.target.value && ed.tags.length) { ed.tags.pop(); drawEdTags(); }
+  });
+  $('#edTagInput').addEventListener('input', drawEdTags);
+  $('#editor').addEventListener('keydown', e => { if (e.key === 'Escape') closeEditor(); if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $('#editor').requestSubmit(); } });
+  $('#editor').addEventListener('submit', async e => {
+    e.preventDefault();
+    const v = readEditor(); if (!v) return;
+    closeEditor();
+    if (ed.id) { const ok = await put(ed.id, cleanEntry({ ...v, createdAt: ed.base.createdAt, payee: ed.base.payee, ref: ed.base.ref })); if (ok) toast('Saved'); }
+    else { const id = await add(v); if (id) announceAdd(id, `Added ${v.type === 'income' ? '+' : '−'}${money(v.amount)} ${v.title || ''}`); }
+  });
+  $('#edDelete').onclick = () => { const id = ed.id; closeEditor(); removeMany([id], 'Deleted entry'); };
+  $('#edDup').onclick = async () => { const v = readEditor(); if (!v) return; closeEditor(); const id = await add({ ...v, date: todayISO() }); if (id) announceAdd(id, 'Duplicated for today'); };
+
+  // header
+  $('#currency').value = state.currency;
+  $('#currency').onchange = e => { state.currency = e.target.value; lsSet('tl.currency', state.currency); render(); quickPreview(); if (!state.readOnly) state.store.setSetting({ currency: state.currency }).catch(() => {}); };
+  $('#importBtn').onclick = () => $('#importFile').click();
+  $('#importFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); };
+  $('#expCsv').onclick = exportCsv; $('#expXlsx').onclick = exportXlsx; $('#expCopy').onclick = exportCopy;
+  $('#loadOlder').onclick = async () => {
+    const dates = [...all().values()].map(e => e.date).sort(); if (!dates.length) return;
+    $('#loadOlder').disabled = true;
+    try { const { rows, full } = await state.store.older(dates[0]); let added = 0; for (const r of rows) if (!all().has(r.id)) { state.older.set(r.id, r); added++; } state.olderDone = !full || !added; }
+    catch { toast('Could not load older entries. Try again.'); }
+    $('#loadOlder').disabled = false; render();
+  };
+
+  document.addEventListener('keydown', e => {
+    if (!$('#overlay').hidden || state.readOnly) return;
+    const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
+    if (e.key === '/' && !typing) { e.preventDefault(); $('#quick').focus(); }
+    if (e.key === 'n' && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openEditor(null); }
+  });
+}
+
+function startStore(store, label) {
+  state.store = store;
+  let first = true;
+  store.subscribe((rows, hit) => {
+    state.live = new Map(rows.map(r => [r.id, r])); state.hitLimit = hit;
+    if (first) { first = false; const s = $('#sync'); if (!state.readOnly) { s.textContent = label; s.className = 'pill ' + (store.kind === 'db' ? 'ok' : 'warn'); } }
+    render();
+  }, err => {
+    $('#sync').textContent = 'Offline'; $('#sync').className = 'pill warn';
+    if (err && err.code === 'revoked') setReadOnly(true);
+  });
+}
+
+async function boot() {
+  wire(); wireInbox(); render(); quickPreview();
+  const c = window.claude;
+  const [db, user, dl] = c && c.use ? await Promise.all([c.use('db').catch(() => null), c.use('user').catch(() => null), c.use('downloads').catch(() => null)]) : [null, null, null];
+  downloads = dl;
+  if (!downloads && window.claude) { $('#expCsv').hidden = true; $('#expXlsx').hidden = true; }
+  if (db) {
+    let canWrite = null;
+    if (user) { try { canWrite = await user.can('data.write'); } catch {} }
+    const store = dbStore(db);
+    if (canWrite === false) setReadOnly(true);
+    startStore(store, 'Synced');
+    store.getSetting().then(s => { if (s && s.currency && s.currency !== state.currency) { state.currency = s.currency; lsSet('tl.currency', s.currency); $('#currency').value = s.currency; render(); } }).catch(() => {});
+  } else {
+    startStore(localStore(), 'Saved in this browser only');
+  }
+}
+boot();
+})();
+</script>
+
+</body></html>

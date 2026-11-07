@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#EDF0EC</color>
+    <color name="accent">#2B44C9</color>
+    <!-- Deep lotus maroon behind the launcher icon. -->
+    <color name="icon_bg">#7A1840</color>
+</resources>
